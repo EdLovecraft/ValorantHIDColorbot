@@ -1,85 +1,119 @@
+import hid
 import time
 import threading
-import serial
-import serial.tools.list_ports
 from settings import Settings
 
 class Mouse:
     """
-    The Mouse class is responsible for managing the connection to an Arduino-based mouse controller
-    and sending movement commands via a serial port.
+    Mouse 类现在负责管理与 HID 鼠标设备的连接，
+    并直接通过 USB 发送移动和点击命令。
 
     Attributes:
-        settings (Settings): An instance of the Settings class to retrieve configuration settings.
-        serial_port (serial.Serial): The serial port connection to the Arduino.
-        remainder_x (float): The accumulated remainder of x-axis movement.
-        remainder_y (float): The accumulated remainder of y-axis movement.
+        settings (Settings): 用于检索配置设置的 Settings 类的实例。
+        lock (threading.Lock): 用于确保线程安全的锁。
+        device (hid.device): 与 HID 设备的连接。
+        remainder_x (float): x轴移动的累积余数，用于平滑移动。
+        remainder_y (float): y轴移动的累积余数，用于平滑移动。
     """
-    
+
     def __init__(self):
         """
-        Initializes the Mouse class by setting up the serial port connection to the Arduino
-        and initializing the remainder attributes.
+        初始化 Mouse 类，设置并连接到 HID 设备。
         """
         self.settings = Settings()
         self.lock = threading.Lock()
-        self.serial_port = serial.Serial()
-        self.serial_port.baudrate = 115200
-        self.serial_port.timeout = 0
-        self.serial_port.port = self.find_serial_port()
+
+        # 从 settings.ini 读取供应商ID (Vendor ID) 和产品ID (Product ID)
+        # 假设它们以十六进制字符串形式存储 (例如 "0x1532")
+        try:
+            vendor_id_str = self.settings.get('HID', 'vendor_id')
+            product_id_str = self.settings.get('HID', 'product_id')
+            self.vendor_id = int(vendor_id_str, 16)
+            self.product_id = int(product_id_str, 16)
+        except Exception as e:
+            print(f"从 settings.ini 读取 HID 配置时出错: {e}")
+            print("请确保您有一个 [HID] 部分，并包含 vendor_id 和 product_id。")
+            print("程序将在10秒后退出...")
+            time.sleep(10)
+            exit()
+
+        self.device = hid.device()
+        try:
+            self.device.open(self.vendor_id, self.product_id)
+            print("已成功连接到 HID 设备。")
+        except Exception as e:
+            print(f"连接 HID 设备失败: {e}")
+            print("请检查 settings.ini 中的 VID/PID 是否正确，并确保设备已连接。")
+            print("程序将在10秒后退出...")
+            time.sleep(10)
+            exit()
+
         self.remainder_x = 0.0
         self.remainder_y = 0.0
-        try:
-            self.serial_port.open()
-        except serial.SerialException:
-            print("Colorbot is already open or Arduino is being used by another app.\nExiting in 10 seconds...")
-            time.sleep(10)
-            exit()
 
-    def find_serial_port(self):
+    def _unsign(self, value):
         """
-        Finds and returns the serial port connected to the Arduino based on the configuration settings.
-
-        Returns:
-            str: The device name of the connected serial port.
-
-        Raises:
-            SystemExit: If the specified Arduino COM port cannot be found.
+        将值转换为8位无符号整数，以匹配 HID 报告中 int8_t 的类型。
         """
-        com_port = self.settings.get('Settings', 'COM-Port')
-        port = next((port for port in serial.tools.list_ports.comports() if com_port in port.description), None)
-        if port is not None:
-            return port.device
-        else:
-            print(f"Unable to detect your specified Arduino ({com_port}).\nPlease check its connection and the settings.ini file, then try again.\nExiting in 10 seconds...")
-            time.sleep(10)
-            exit()
+        return value & 0xFF
 
     def move(self, x, y):
         """
-        Sends a mouse movement command to the Arduino, handling fractional movements by storing remainders.
+        向 HID 设备发送鼠标移动命令。
+        通过处理小数移动的余数来平滑移动。
 
         Args:
-            x (float): The movement along the x-axis.
-            y (float): The movement along the y-axis.
+            x (float): x轴上的移动距离。
+            y (float): y轴上的移动距离。
         """
-        # Add the remainder from the previous calculation
-        x += self.remainder_x
-        y += self.remainder_y
+        with self.lock:
+            # 加上次计算的余数
+            x += self.remainder_x
+            y += self.remainder_y
 
-        # Round x and y, and calculate the new remainder
-        move_x = int(x)
-        move_y = int(y)
-        self.remainder_x = x - move_x
-        self.remainder_y = y - move_y
+            # 对x和y取整，并计算新的余数
+            move_x = int(x)
+            move_y = int(y)
+            self.remainder_x = x - move_x
+            self.remainder_y = y - move_y
 
-        if move_x != 0 or move_y != 0:
-            with self.lock:
-                self.serial_port.write(f'M{move_x},{move_y}\n'.encode())
+            if move_x != 0 or move_y != 0:
+                # 构建 HID 报告 [buttons, x, y]
+                # 0 代表没有按键按下
+                report = [0, self._unsign(move_x), self._unsign(move_y)]
+                try:
+                    self.device.write(report)
+                except Exception as e:
+                    print(f"向 HID 设备写入时出错: {e}")
+
 
     def click(self):
         """
-        Sends a mouse click command to the Arduino.
+        向 HID 设备发送鼠标左键单击命令。
         """
-        with self.lock: 
-            self.serial_port.write('C\n'.encode())
+        with self.lock:
+            try:
+                # 按下鼠标左键 (按钮1)
+                # 报告格式: [按键状态, x移动, y移动]
+                self.device.write([1, 0, 0])
+
+                # 理论上需要一个短暂的延迟
+                time.sleep(0.01)
+
+                # 释放鼠标左键 (按钮0)
+                self.device.write([0, 0, 0])
+            except Exception as e:
+                print(f"在点击期间向 HID 设备写入时出错: {e}")
+
+    def close(self):
+        """
+        关闭 HID 设备连接。
+        """
+        if self.device:
+            self.device.close()
+
+    def __del__(self):
+        """
+        确保在对象销毁时关闭设备连接。
+        """
+        self.close()
