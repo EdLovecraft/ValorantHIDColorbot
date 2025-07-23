@@ -25,7 +25,7 @@
    - Change the enemy highlight color to **Purple**.
      
 5. **Run the Colorbot**:
-   - Execute the main script by running:
+   - Execute the main script by running(as admin):
      ```bash
      py main.py
      ```
