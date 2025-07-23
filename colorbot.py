@@ -30,8 +30,10 @@ class Colorbot:
         self.settings = Settings()
 
         # Color detection settings (HSV)
-        self.lower_color = np.array([150, 76,  123])
-        self.upper_color = np.array([160, 197, 255])
+        #self.lower_color = np.array([150, 76,  123])
+        #self.upper_color = np.array([160, 197, 255])
+        self.lower_color = np.array([140, 110, 150])
+        self.upper_color = np.array([150, 195, 255])
 
         # Aimbot settings
         self.aim_enabled = self.settings.get_boolean('Aimbot', 'Enabled')
@@ -90,16 +92,16 @@ class Colorbot:
         """
         # Convert the captured screen to HSV color space
         hsv = cv2.cvtColor(self.capturer.get_screen(), cv2.COLOR_BGR2HSV)
-        
+
         # Create a binary mask where detected colors are white, and everything else is black
         mask = cv2.inRange(hsv, self.lower_color, self.upper_color)
-        
+
         # Dilate the mask to make detected regions more prominent
         dilated = cv2.dilate(mask, self.kernel, iterations=5)
-        
+
         # Apply thresholding to get a binary image
         thresh = cv2.threshold(dilated, 60, 255, cv2.THRESH_BINARY)[1]
-        
+
         # Find contours in the binary image
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -107,7 +109,7 @@ class Colorbot:
         if contours:
             min_distance = float('inf')
             closest_center = None
-            
+
             for contour in contours:
                 # Find the contour closest to the center of the screen using moments
                 moments = cv2.moments(contour)
