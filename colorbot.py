@@ -30,10 +30,10 @@ class Colorbot:
         self.settings = Settings()
 
         # Color detection settings (HSV)
-        #self.lower_color = np.array([150, 76,  123])
-        #self.upper_color = np.array([160, 197, 255])
-        self.lower_color = np.array([140, 110, 150])
-        self.upper_color = np.array([150, 195, 255])
+        #self.lower_color = np.array([140, 110, 150])
+        #self.upper_color = np.array([150, 195, 255])
+        self.lower_color = np.array([144, 106, 172])
+        self.upper_color = np.array([151, 255, 255])
 
         # Aimbot settings
         self.aim_enabled = self.settings.get_boolean('Aimbot', 'Enabled')
