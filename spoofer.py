@@ -88,8 +88,9 @@ class Spoofer:
         Returns:
             list: A list of tuples where each tuple contains the device name, VID, and PID.
         """
-        # Connect to the WMI service
-        wmi_service = win32com.client.GetObject("winmgmts:")
+        # Connect to the WMI service (Through SWbemLocator to aviod multi-lingual problems)
+        locator = win32com.client.Dispatch("WbemScripting.SWbemLocator")
+        wmi_service = locator.ConnectServer(".", "root\\cimv2", "", "", "MS_409", "", 0, None)
         # Get all pointing devices
         mouse_devices = wmi_service.InstancesOf("Win32_PointingDevice")
         # List of detected mice
